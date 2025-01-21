@@ -1,0 +1,41 @@
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    # Set up Go, Kubectl, KinD, etc.
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: "1.20"
+
+    - name: Install kind
+      uses: helm/kind-action@v1.10.0
+      with:
+        install_only: true
+        version: ${{ inputs.kind-version }}
+    - uses: azure/setup-kubectl@v4
+      id: kubectl
+      with:
+        version: ${{ inputs.kubectl-version }}
+    - uses: azure/setup-helm@v4
+      with:
+        version: ${{ inputs.helm-version }}
+
+    - name: Setup test env
+      shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+        CLUSTER_NODE_VERSION: ${{ inputs.kind-node-version }}
+        ISTIO_VERSION: ${{ inputs.istio-version }}
+        CONFORMANCE_VERSION: ${{ inputs.k8sgateway-api-version }}
+      run: ./ci/kind/setup-kind.sh
+
+    - name: Run e2e tests
+      env:
+        HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+      run: |
+        # Start your test environment, e.g. a KinD cluster or ephemeral cluster
+        # Then pass HF_API_TOKEN to your test harness, e.g.:
+        make e2e

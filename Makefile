@@ -183,6 +183,14 @@ ifndef ignore-not-found
   ignore-not-found = false
 endif
 
+.PHONY: kind
+kind: ## Install a kind cluster
+	./ci/hack/kind.sh create
+
+.PHONY: unkind
+unkind: ## Uninstall a kind cluster
+	./ci/hack/kind.sh delete
+
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
