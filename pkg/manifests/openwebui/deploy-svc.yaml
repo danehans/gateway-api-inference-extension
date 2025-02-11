@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openwebui
+spec:
+  # Requires port forwarding when running on gcp with kind:
+  # gcloud compute firewall-rules create openwebui --allow tcp:8080 --source-tags=dhansen --source-ranges=0.0.0.0/0 --description="test external llm access"
+  #type: LoadBalancer
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: openwebui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openwebui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openwebui
+  template:
+    metadata:
+      labels:
+        app: openwebui
+    spec:
+      containers:
+      - name: openwebui
+        image: ghcr.io/open-webui/open-webui:main
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ENABLE_OLLAMA_API
+          value: "False"
+        - name: BYPASS_MODEL_ACCESS_CONTROL
+          value: "True"
+        - name: OPENAI_API_BASE_URL
+          #value: "http://vllm-llama2-7b-pool.default.svc:8000/v1"
+          value: "http://envoy-default-inference-gateway-6454a873.envoy-gateway-system.svc:8081/v1"
+        #- name: OPENAI_API_KEY
+        #  value: "" # Optional: Set if the vLLM instance requires an API key
+        - name: GLOBAL_LOG_LEVEL
+          value: "INFO" # See https://docs.openwebui.com/getting-started/advanced-topics/logging for levels

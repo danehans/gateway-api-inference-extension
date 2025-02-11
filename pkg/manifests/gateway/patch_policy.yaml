@@ -34,10 +34,16 @@ spec:
             - max_connections: 40000
               max_pending_requests: 40000
               max_requests: 40000
-
     - type: "type.googleapis.com/envoy.config.route.v3.RouteConfiguration"
       name: default/inference-gateway/llm-gw
       operation:
         op: replace
         path: "/virtual_hosts/0/routes/0/route/cluster"
+        value: original_destination_cluster
+    # Required b/c the openwebui httproute adds a rule for /v1/models.
+    - type: "type.googleapis.com/envoy.config.route.v3.RouteConfiguration"
+      name: default/inference-gateway/llm-gw
+      operation:
+        op: replace
+        path: "/virtual_hosts/0/routes/1/route/cluster"
         value: original_destination_cluster
