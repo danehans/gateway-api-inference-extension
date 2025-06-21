@@ -90,6 +90,12 @@ sed -i.bak -E "s|(vllm/vllm-openai:)[^\"[:space:]]+|\1v${VLLM_GPU}|g" "$VLLM_GPU
 # Also change the imagePullPolicy from Always to IfNotPresent on lines containing the vLLM image.
 sed -i.bak '/vllm\/vllm-openai/{n;s/Always/IfNotPresent/;}' "$VLLM_GPU_DEPLOY"
 
+# Also change the imagePullPolicy from Always to IfNotPresent on lines containing the lora-syncer image.
+sed -i.bak -E \
+  "s|(.*/gateway-api-inference-extension/lora-syncer:)[^\"[:space:]]+|\1${RELEASE_TAG}|g" \
+  "$VLLM_GPU_DEPLOY"
+sed -i.bak '/lora-syncer:/{n;s/Always/IfNotPresent/;}' "$VLLM_GPU_DEPLOY"
+
 VLLM_CPU_DEPLOY="config/manifests/vllm/cpu-deployment.yaml"
 echo "Updating ${VLLM_CPU_DEPLOY} ..."
 
@@ -98,6 +104,12 @@ sed -i.bak -E "s|(q9t5s3a7/vllm-cpu-release-repo:)[^\"[:space:]]+|\1v${VLLM_CPU}
 
 # Also change the imagePullPolicy from Always to IfNotPresent on lines containing the vLLM CPU image.
 sed -i.bak '/q9t5s3a7\/vllm-cpu-release-repo/{n;s/Always/IfNotPresent/;}' "$VLLM_CPU_DEPLOY"
+
+# Also change the imagePullPolicy from Always to IfNotPresent for the lora-syncer image.
+sed -i.bak -E \
+  "s|(.*/gateway-api-inference-extension/lora-syncer:)[^\"[:space:]]+|\1${RELEASE_TAG}|g" \
+  "$VLLM_CPU_DEPLOY"
+sed -i.bak '/lora-syncer:/{n;s/Always/IfNotPresent/;}' "$VLLM_CPU_DEPLOY"
 
 VLLM_SIM_DEPLOY="config/manifests/vllm/sim-deployment.yaml"
 echo "Updating ${VLLM_SIM_DEPLOY} ..."
