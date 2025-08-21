@@ -111,7 +111,7 @@ func TestInferencePoolConvertTo(t *testing.T) {
 				Status: v1.InferencePoolStatus{
 					Parents: []v1.PoolStatus{
 						{
-							GatewayRef: v1.ParentGatewayReference{Name: "my-gateway"},
+							ParentRef: v1.ParentReference{Name: "my-gateway"},
 							Conditions: []metav1.Condition{
 								{
 									Type:               string(v1.InferencePoolConditionAccepted),
@@ -179,7 +179,7 @@ func TestInferencePoolConvertTo(t *testing.T) {
 				Status: v1.InferencePoolStatus{
 					Parents: []v1.PoolStatus{
 						{
-							GatewayRef: v1.ParentGatewayReference{Name: "my-gateway"},
+							ParentRef: v1.ParentReference{Name: "my-gateway"},
 							Conditions: []metav1.Condition{
 								{
 									Type:               string(v1.InferencePoolConditionAccepted),
@@ -246,7 +246,7 @@ func TestInferencePoolConvertFrom(t *testing.T) {
 				Status: v1.InferencePoolStatus{
 					Parents: []v1.PoolStatus{
 						{
-							GatewayRef: v1.ParentGatewayReference{Name: "my-gateway"},
+							ParentRef: v1.ParentReference{Name: "my-gateway"},
 							Conditions: []metav1.Condition{
 								{
 									Type:               string(v1.InferencePoolConditionAccepted),
@@ -321,7 +321,7 @@ func TestInferencePoolConvertFrom(t *testing.T) {
 				Status: v1.InferencePoolStatus{
 					Parents: []v1.PoolStatus{
 						{
-							GatewayRef: v1.ParentGatewayReference{Name: "my-gateway"},
+							ParentRef: v1.ParentReference{Name: "my-gateway"},
 							Conditions: []metav1.Condition{
 								{
 									Type:               string(v1.InferencePoolConditionAccepted),

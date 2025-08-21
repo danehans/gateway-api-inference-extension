@@ -21,7 +21,7 @@ package v1
 // InferencePoolStatusApplyConfiguration represents a declarative configuration of the InferencePoolStatus type for use
 // with apply.
 type InferencePoolStatusApplyConfiguration struct {
-	Parents []PoolStatusApplyConfiguration `json:"parent,omitempty"`
+	Parents []PoolStatusApplyConfiguration `json:"parents,omitempty"`
 }
 
 // InferencePoolStatusApplyConfiguration constructs a declarative configuration of the InferencePoolStatus type for use with
