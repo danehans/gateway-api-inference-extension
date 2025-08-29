@@ -1,8 +1,8 @@
 # Version variables - can be overridden via environment or command line
 # Example: make all ISTIO_VERSION=1.28.0
 GATEWAY_API_VERSION ?= v1.3.0
-INFERENCE_EXTENSION_VERSION ?= v0.4.0
-ISTIO_VERSION ?= 1.27-alpha.0551127f00634403cddd4634567e65a8ecc499a7
+INFERENCE_EXTENSION_VERSION ?= v1.0.0-rc.1
+ISTIO_VERSION ?= 1.28-alpha.45e4f30947d52a3710f2b11e11c208dee247fa3a
 ISTIO_HUB ?= 
 ISTIO_PROFILE ?= minimal
 
@@ -377,31 +377,18 @@ $(REPORT_BASE_DIR)/README.md: Makefile | ensure-report-dir
 	@rm -f /tmp/readme-template.md
 	@echo "README generated at: $@"
 
-# Install Istio (generic target using ISTIO_PROFILE variable)
-setup-istio: $(ISTIOCTL_BIN)
+# Install Istio
+setup-istio:
 	@echo "Installing Istio version $(ISTIO_VERSION) with profile $(ISTIO_PROFILE)..."
-	@if [ -n "$(ISTIO_HUB)" ]; then \
-		HUB="$(ISTIO_HUB)"; \
-		echo "Using specified hub: $$HUB"; \
-	elif [ -f "$(ISTIOCTL_BIN).source" ]; then \
-		SOURCE=$$(cat $(ISTIOCTL_BIN).source); \
-		if [ "$$SOURCE" = "github" ]; then \
-			HUB="gcr.io/istio-release"; \
-			echo "Using hub for GitHub release: $$HUB"; \
-		elif [ "$$SOURCE" = "container" ]; then \
-			HUB="gcr.io/istio-testing"; \
-			echo "Using hub for container image: $$HUB"; \
-		else \
-			HUB="gcr.io/istio-testing"; \
-			echo "Unknown source, defaulting to testing hub: $$HUB"; \
-		fi; \
-	else \
-		HUB="gcr.io/istio-release"; \
-		echo "WARNING: Could not detect istioctl source, defaulting to release hub: $$HUB"; \
-		echo "If this is incorrect, specify ISTIO_HUB manually"; \
-	fi; \
-	echo "Installing Istio from $$HUB..."; \
-	$(ISTIOCTL_BIN) install -y --set profile=$(ISTIO_PROFILE) --set values.global.hub=$$HUB --set values.global.tag=$(ISTIO_VERSION) --set values.pilot.env.SUPPORT_GATEWAY_API_INFERENCE_EXTENSION=true --set values.pilot.env.ENABLE_GATEWAY_API_INFERENCE_EXTENSION=true
+	@ISTIO_VERSION="$(ISTIO_VERSION)" \
+	 ISTIO_PROFILE="$(ISTIO_PROFILE)" \
+	 ISTIO_HUB="$(ISTIO_HUB)" \
+	 KIND_CONTEXT="$(KIND_CONTEXT)" \
+	 KUBECONFIG="$(KUBECONFIG)" \
+	 ISTIOCTL_DIR="$(ISTIOCTL_DIR)" \
+	 KUBECONFIG_DOCKER="$(KUBECONFIG_DOCKER)" \
+	 ISTIOCTL_BIN="$(ISTIOCTL_BIN)" \
+	 ./install_istio.sh
 
 # Install Istio for minikube environment
 setup-istio-minikube:
@@ -423,8 +410,7 @@ setup-gateway-api-crds:
 # Apply Inference Extension CRDs
 setup-inference-extension-crds:
 	@echo "Applying Inference Extension CRDs version $(INFERENCE_EXTENSION_VERSION)..."
-	kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api-inference-extension/refs/tags/$(INFERENCE_EXTENSION_VERSION)/config/crd/bases/inference.networking.x-k8s.io_inferencepools.yaml
-	kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api-inference-extension/refs/tags/$(INFERENCE_EXTENSION_VERSION)/config/crd/bases/inference.networking.x-k8s.io_inferenceobjectives.yaml
+	kubectl apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/$(INFERENCE_EXTENSION_VERSION)/manifests.yaml
 
 # Apply all CRDs (convenience target)
 setup-crds: setup-gateway-api-crds setup-inference-extension-crds
