@@ -1,0 +1,262 @@
+# Exporting Cluster- Standard Gateway, HTTPRoute, etc with TBD annotation to export the InferencePool. An Inference Platform Owner annotates an InferencePool with a TBD
+# k/v pair to export the InferencePool to other clusters. A multi-cluster Inference (MCI) controller watches exported InferencePool resources
+# in all clusters and auto creates an InferencePoolImport resource in each remote cluster using the exported InferencePool ns/name as the ns/name for the
+# InferencePoolImport resource. The TBD annotation defines the clusters that the InferencePool should be exported to.
+---
+# Standard EPP Service and Deployment for the InferencePool. This example uses LoadBalancer type service to simulate an EPP service that is reachable from outside the cluster.
+# The Inference Gateway (IG) of the importing cluster can use the EPP service IP and port to create the gRPC ext-proc connection to the Endpoint Picker (EPP) extension of the exported InferencePool.
+# When EPP service is a ClusterIP type, direct access to the EPP service from outside the cluster is not possible without additional tooling. In this case, either podCIDR reachability
+# is required between the clusters or the InferencePoolImport controller MUST use an exported InferencePool parent, e.g. Gateway, to create the gRPC ext-proc connection to the
+# EPP service of the exported InferencePool.
+apiVersion: v1
+kind: Service
+metadata:
+  name: epp
+  namespace: example
+spec:
+  selector:
+    app: epp
+  # TODO: Instead of requiring the EPP Service expose health and metrics ports, should the MCI controller use `spec.selector`
+  # to discover the additional ports, e.g. get containerPorts from EPP pods. This would require standardized naming for the 3 EPP ports.
+  # When multiple active/active replicas are used for an EPP, Service subsetting SHOULD be implemented so each EPP has uniquely routable endpoints
+  # needed for scraping metrics and health checking checking (both optional).
+  ports:
+    - name: ext-proc
+      protocol: TCP
+      port: 9002
+      targetPort: 9002
+      appProtocol: http2
+    - name: health # This port is currently not exposed through the EPP Service.
+      protocol: TCP
+      port: 9003
+      targetPort: 9003
+      appProtocol: http2
+    - name: metrics # This port is currently not exposed through the EPP Service.
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+      appProtocol: http2
+  type: LoadBalancer
+status:
+  loadBalancer:
+    ingress:
+      - ip: 1.2.3.4 # Populated by the cloud provider when a Service of type LoadBalancer is created.
+---
+# Standard EPP deployment for the InferencePool but includes naming the metrics and health checking ports
+# in case port discovery is desired instead of defining additional ports in the EPP Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: epp
+  namespace: example
+  labels:
+    app: epp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: epp
+  template:
+    metadata:
+      labels:
+        app: epp
+    spec:
+      serviceAccountName: epp
+      containers:
+      - name: epp
+        image: us-central1-docker.pkg.dev/k8s-staging-images/gateway-api-inference-extension/epp:v1.0.0-rc.1
+        imagePullPolicy: Always
+        args:
+        - -pool-name
+        - llm-pool
+        - -pool-namespace
+        - example
+        - -grpc-port
+        - "9002"
+        - -grpc-health-port
+        - "9003"
+        ports:
+        - containerPort: 9002
+          name: ext-proc
+        - containerPort: 9003
+          name: health
+        - containerPort: 9090
+          name: metrics
+        livenessProbe: # Note: The same config exists for readinessProbe
+          grpc:
+            port: 9003
+---
+# Additional listeners MUST be created when inter-cluster podCIDR routing is NOT supported by an implementation:
+#  - epp-ext-proc listener (required) so the IG from the importing cluster can send gRPC requests to the exported EPP for endpoint selection.
+#  - epp-health listener (optional) so the IG from the importing cluster can perform liveness checking of the exported EPP.
+#  - epp-metrics listener (optional) so the IG from the importing cluster can scrape EPP metrics  and use the metrics as input for making a load-balancing decision.
+kind: Gateway
+apiVersion: gateway.networking.k8s.io/v1
+metadata:
+  name: inf-gw
+  namespace: example
+spec:
+  gatewayClassName: my-gc
+  listeners:
+    - protocol: HTTP
+      port: 8080
+      name: http
+#    - protocol: HTTP
+#      port: 9002
+#      name: epp-ext-proc
+#    - protocol: HTTP
+#      port: 9003
+#      name: epp-health
+#    - protocol: HTTP
+#      port: 9090
+#      name: epp-metrics
+---
+# Should HTTPRoute sameness be required between the exporting and importing cluster when the IG of the importing cluster routes through the exported parent IG,
+# e.g. no podCIDR connectivity between clusters?
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: HTTPRoute
+metadata:
+  name: llm-route
+  namespace: example
+spec:
+  parentRefs:
+  - name: inf-gw
+  hostnames:
+  - "my.model.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /completions
+    backendRefs:
+    - name: llm-pool
+      kind: InferencePool
+      group: inference.networking.k8s.io
+      # If this InferencePoolImport does not exist, the IG should surface ResolvedRefs=False for this HTTPRoute.
+      # Otherwise, the IG should configure routing to the remote endpoints backed by this InferencePool.
+      # The IG can route directly to an endpoint picked by the exported EPP or to a parent of the remote InferencePool (surfaced through InferencePoolImport status).
+      # TODO: What if an implementation includes an EPP MCI scheduler, then the IG should use the local EPP instead of the exported EPP for endpoint selection.
+    - name: llm-pool
+      kind: InferencePoolImport
+      group: inference.networking.x-k8s.io
+---
+apiVersion: inference.networking.k8s.io/v1
+kind: InferencePool
+metadata:
+  name: llm-pool
+  namespace: example
+  annotations:
+    # An annotation to indicate that this InferencePool should be exported to other clusters. The key/value is TBD- it
+    # should support specifying a ClusterSet (https://multicluster.sigs.k8s.io/api-types/cluster-set/) in which the InferencePool
+    # will be exported to all clusters in the ClusterSet or a comma separated list of specific ClusterSet members. TODO: Figure
+    # out if 1 annotation can bbe used to support both use cases or if separate annotations are needed.
+    # of the 
+    # TODO: Should the MCI controller configure a DNS zone and record for each exported InferencePool EPP?
+    # TODO: Should separate annotations be used to specify whether to export the InferencePool to a clusterSet or specific cluster(s)?
+    tbd.pool.export/key: tbd-pool-export-value
+    # An annotation (optional) that describes the type of InferencePool export, enum:
+    # - "Endpoints"- InferencePool endpoints are externally reachable by podCIDR.
+    # - "Parents"- InferencePool endpoints are externally reachable through InferencePool `status.parents`, e.g. Gateways.
+    tbd.pool.export.type/key: tbd-pool-export-type-value
+spec:
+  endpointPickerRef:
+    name: epp
+    portNumber: 9002
+  selector:
+    matchLabels:
+      app: my-model-server-pods
+  targetPorts:
+  - number: 8080
+---
+# Importing Cluster
+# An Inference Platform Owner annotates an InferencePool with a TBD k/v pair to export the InferencePool to other clusters. An MCI
+# controller watches exported InferencePool resources in all clusters and auto creates an InferencePoolImport resource in each remote cluster (if the ns exists)
+# using the exported InferencePool ns/name as the ns/name for the InferencePoolImport resource. The MCI controller is responsible for managing InferencePoolImport status,
+# including the Service type, IP, and port(s) for each InferencePool parent, e.g. Gateway and EPP. Does this mean that InferencePool should surface additional info, e.g. EPP Service
+# type, IP, ports, etc. so the MCI controller only needs to watch InferencePool resources with the TBD annotation? The InferencePoolImport is then referenced by HTTPRoute backendRefs
+# in the import cluster(s) to 1) ext-proc gRPC with. This is a sample InferencePoolImport resource that would be auto created in the remote cluster.
+# An Inference Gateway (IG) management controller should watch InferencePoolImport resources. An optional predicate can be used to only reconcile if it's ns/name matches a managed
+# InferencePool or other filtering criteria may be used. The HTTPRoute contains backendRefs for the local InferencePool and the matching InferencePoolImport.
+apiVersion: inference.networking.x-k8s.io/v1alpha1
+kind: InferencePoolImport
+metadata:
+  name: llm-pool # Same ns/name as the source InferencePool
+  namespace: example
+status: # No `spec` is needed for this resource since it's not user-facing. It's fully managed by the MCI controller.
+  # The status contains the details needed to reference the remote InferencePool in backendRefs.
+  # The status also contains the details needed by an InferencePoolImport controller to manage the IG resources
+  # associated to the InferencePool that exported it.
+  clusters: # When the same InferencePool is exported, the MCI controller appends a cluster to this list.
+  - name: cluster-a # The name of the cluster that exported the InferencePool.
+    # Any other cluster connection details needed by the InferencePoolImport controller to connect to the remote cluster?
+    targetPortNumber: 8080 # The target port of the exported InferencePool. Only used if the IG will route directly to endpoints of the exported InferencePool.
+    endpointPicker:
+    - name: epp
+      service:
+      - type: LoadBalancer # TODO: Should InferencePool status be extended to surface the EPP service type, IP, ports, etc. so the MCI controller can auto populate this info in InferencePoolImport status?
+        ips: # Support IPv4 (and IPv6 future by adding `ipFamilies`).
+        - 1.2.3.4 # IP and port of the source InferencePool parent (Gateway) service resource.
+        ports: # We could expand the `port` type to include protocol, port name, etc.
+        - number: 9002
+      health: # Health check configuration for the remote EPP service. # TODO: InferencePool should be updated to expose EPP health config
+        port: 9003 # TODO: Should this be a struct to support named ports?
+      metrics: # The EPP metrics endpoint. TODO: InferencePool should be updated to expose EPP metrics config, e.g. port number, secretRef to the token used for secure scraping, etc.
+        port: 9002 # TODO: Should this be a struct to support named ports?
+        secretRef: # Optional reference to a secret containing the token required for scraping remote EPP/model server metrics. The MCI controller auto creates the secret or inline the token here.
+          name: epp-metrics-secret # TODO: InferencePool needs to surface the the secret ns/name so the MCI controller can create a secret in the importing cluster with the exported secret token.
+          namespace: example # Optional, defaults to the InferencePoolImport namespace if unspecified. Requires a ReferenceGrant for cross-namespace secret ref.
+      conditions:
+      - type: Ready
+        status: "True"
+        reason: Ready
+        message: EPP service is ready to use.
+    parents: # Parents is a list of parent, i.e. Gateway, resources of the exported InferencePool. Parents MAY be used to route requests to an endpoint selected by the imported EPP.
+    - name: gw1
+      namespace: gw-ns
+      service:
+      - type: LoadBalancer
+        ips: # Support IPv4 (and IPv6 future when `ipFamilies` is added).
+        - 5.6.7.8 # IP and port of the source InferencePool parent (Gateway) service resource.
+        ports: # We could expand the `port` type to include protocol, port name, etc.
+        - number: 8080 # Port(s) of the source InferencePool parent (Gateway) service resource.
+      conditions:
+      - type: Ready
+        status: "True"
+        reason: Ready
+        message: Gateway service is ready to use.
+    conditions:
+    - type: Accepted
+      status: "True"
+      reason: Accepted
+      message: The InferencePoolImport has been accepted by Gateway foo/bar.
+    - type: Ready
+      status: "True"
+      reason: Ready
+      message: InferencePoolImport is ready to use.
+---
+# Should HTTPRoute sameness be required between the exporting and importing cluster when the IG of the importing cluster routes through the exported parent IG,
+# e.g. no podCIDR connectivity between clusters?
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: HTTPRoute
+metadata:
+  name: llm-route
+  namespace: example
+spec:
+  parentRefs:
+  - name: inf-gw
+  hostnames:
+  - "my.model.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /completions
+    backendRefs:
+      # This example only routes to the remote cluster. TODO: Update the example manifests here to depict local and remote routing.
+      # If this InferencePoolImport does not exist, the IG should surface ResolvedRefs=False for this HTTPRoute.
+      # Otherwise, the IG should configure routing to the remote endpoints backed by this InferencePool.
+      # The IG can route directly to an endpoint picked by the exported EPP or to a parent of the remote InferencePool (surfaced through InferencePoolImport status).
+      # TODO: What if an implementation includes an EPP MCI scheduler, then the IG should use the local EPP instead of the exported EPP for endpoint selection.
+    - name: llm-pool
+      kind: InferencePoolImport
+      group: inference.networking.x-k8s.io
